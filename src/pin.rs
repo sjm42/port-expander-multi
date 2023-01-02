@@ -6,6 +6,7 @@ use embedded_hal::digital::v2 as hal_digital;
 /// `Pin` is not constructed directly, this type is created by instanciating a port-expander and
 /// then getting access to all its pins using the `.split()` method.
 pub struct Pin<'a, MODE, MUTEX> {
+    index: u8,
     pin_mask: u32,
     port_driver: &'a MUTEX,
     _m: PhantomData<MODE>,
@@ -16,9 +17,10 @@ where
     PD: crate::PortDriver,
     MUTEX: shared_bus::BusMutex<Bus = PD>,
 {
-    pub(crate) fn new(pin_number: u8, port_driver: &'a MUTEX) -> Self {
+    pub(crate) fn new(index: u8, pin_number: u8, port_driver: &'a MUTEX) -> Self {
         assert!(pin_number < 32);
         Self {
+            index,
             pin_mask: 1 << pin_number,
             port_driver,
             _m: PhantomData,
@@ -30,7 +32,7 @@ where
     }
 
     pub(crate) fn port_driver<'b>(&'b self) -> &'b MUTEX {
-        &self.port_driver
+        self.port_driver
     }
 }
 
@@ -43,9 +45,11 @@ where
     ///
     /// The exact electrical details depend on the port-expander device which is used.
     pub fn into_input(self) -> Result<Pin<'a, crate::mode::Input, MUTEX>, PD::Error> {
-        self.port_driver
-            .lock(|drv| drv.set_direction(self.pin_mask, crate::Direction::Input, false))?;
+        self.port_driver.lock(|drv| {
+            drv.set_direction(self.index, self.pin_mask, crate::Direction::Input, false)
+        })?;
         Ok(Pin {
+            index: self.index,
             pin_mask: self.pin_mask,
             port_driver: self.port_driver,
             _m: PhantomData,
@@ -57,9 +61,11 @@ where
     /// The LOW state is, as long as he port-expander chip allows this, entered without any
     /// electrical glitch.
     pub fn into_output(self) -> Result<Pin<'a, crate::mode::Output, MUTEX>, PD::Error> {
-        self.port_driver
-            .lock(|drv| drv.set_direction(self.pin_mask, crate::Direction::Output, false))?;
+        self.port_driver.lock(|drv| {
+            drv.set_direction(self.index, self.pin_mask, crate::Direction::Output, false)
+        })?;
         Ok(Pin {
+            index: self.index,
             pin_mask: self.pin_mask,
             port_driver: self.port_driver,
             _m: PhantomData,
@@ -71,9 +77,11 @@ where
     /// The HIGH state is, as long as he port-expander chip allows this, entered without any
     /// electrical glitch.
     pub fn into_output_high(self) -> Result<Pin<'a, crate::mode::Output, MUTEX>, PD::Error> {
-        self.port_driver
-            .lock(|drv| drv.set_direction(self.pin_mask, crate::Direction::Output, true))?;
+        self.port_driver.lock(|drv| {
+            drv.set_direction(self.index, self.pin_mask, crate::Direction::Output, true)
+        })?;
         Ok(Pin {
+            index: self.index,
             pin_mask: self.pin_mask,
             port_driver: self.port_driver,
             _m: PhantomData,
@@ -89,14 +97,14 @@ where
     /// Turn on hardware polarity inversion for this pin.
     pub fn into_inverted(self) -> Result<Self, PD::Error> {
         self.port_driver
-            .lock(|drv| drv.set_polarity(self.pin_mask, true))?;
+            .lock(|drv| drv.set_polarity(self.index, self.pin_mask, true))?;
         Ok(self)
     }
 
     /// Set hardware polarity inversion for this pin.
     pub fn set_inverted(&mut self, inverted: bool) -> Result<(), PD::Error> {
         self.port_driver
-            .lock(|drv| drv.set_polarity(self.pin_mask, inverted))?;
+            .lock(|drv| drv.set_polarity(self.index, self.pin_mask, inverted))?;
         Ok(())
     }
 }
@@ -109,13 +117,13 @@ where
     /// Read the pin's input state and return `true` if it is HIGH.
     pub fn is_high(&self) -> Result<bool, PD::Error> {
         self.port_driver
-            .lock(|drv| Ok(drv.get(self.pin_mask, 0)? == self.pin_mask))
+            .lock(|drv| Ok(drv.get(self.index, self.pin_mask, 0)? == self.pin_mask))
     }
 
     /// Read the pin's input state and return `true` if it is LOW.
     pub fn is_low(&self) -> Result<bool, PD::Error> {
         self.port_driver
-            .lock(|drv| Ok(drv.get(0, self.pin_mask)? == self.pin_mask))
+            .lock(|drv| Ok(drv.get(self.index, 0, self.pin_mask)? == self.pin_mask))
     }
 }
 
@@ -144,14 +152,16 @@ where
     ///
     /// Note that this can have different electrical meanings depending on the port-expander chip.
     pub fn set_high(&mut self) -> Result<(), PD::Error> {
-        self.port_driver.lock(|drv| drv.set(self.pin_mask, 0))
+        self.port_driver
+            .lock(|drv| drv.set(self.index, self.pin_mask, 0))
     }
 
     /// Set the pin's output state to LOW.
     ///
     /// Note that this can have different electrical meanings depending on the port-expander chip.
     pub fn set_low(&mut self) -> Result<(), PD::Error> {
-        self.port_driver.lock(|drv| drv.set(0, self.pin_mask))
+        self.port_driver
+            .lock(|drv| drv.set(self.index, 0, self.pin_mask))
     }
 
     /// Return `true` if the pin's output state is HIGH.
@@ -159,7 +169,7 @@ where
     /// This method does **not** read the pin's electrical state.
     pub fn is_set_high(&self) -> Result<bool, PD::Error> {
         self.port_driver
-            .lock(|drv| Ok(drv.is_set(self.pin_mask, 0)? == self.pin_mask))
+            .lock(|drv| Ok(drv.is_set(self.index, self.pin_mask, 0)? == self.pin_mask))
     }
 
     /// Return `true` if the pin's output state is LOW.
@@ -167,12 +177,13 @@ where
     /// This method does **not** read the pin's electrical state.
     pub fn is_set_low(&self) -> Result<bool, PD::Error> {
         self.port_driver
-            .lock(|drv| Ok(drv.is_set(0, self.pin_mask)? == self.pin_mask))
+            .lock(|drv| Ok(drv.is_set(self.index, 0, self.pin_mask)? == self.pin_mask))
     }
 
     /// Toggle the pin's output state.
     pub fn toggle(&mut self) -> Result<(), PD::Error> {
-        self.port_driver.lock(|drv| drv.toggle(self.pin_mask))
+        self.port_driver
+            .lock(|drv| drv.toggle(self.index, self.pin_mask))
     }
 }
 
@@ -219,3 +230,5 @@ where
         Pin::toggle(self)
     }
 }
+
+// EOF

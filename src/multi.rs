@@ -29,6 +29,7 @@
 /// ).unwrap();
 /// ```
 pub fn write_multiple<PD, MUTEX, MODE: crate::mode::HasOutput, const N: usize>(
+    index: u8,
     pins: [&mut crate::Pin<'_, MODE, MUTEX>; N],
     states: [bool; N],
 ) -> Result<(), PD::Error>
@@ -50,7 +51,7 @@ where
     }
 
     pins[0].port_driver().lock(|drv| {
-        drv.set(mask_set_high, mask_set_low)?;
+        drv.set(index, mask_set_high, mask_set_low)?;
         Ok(())
     })
 }
@@ -94,6 +95,7 @@ where
 /// }
 /// ```
 pub fn read_multiple<PD, MUTEX, MODE: crate::mode::HasInput, const N: usize>(
+    index: u8,
     pins: [&crate::Pin<'_, MODE, MUTEX>; N],
 ) -> Result<[bool; N], PD::Error>
 where
@@ -102,7 +104,7 @@ where
 {
     let mask = pins.iter().map(|p| p.pin_mask()).fold(0, |m, p| m | p);
     let port_driver = pins[0].port_driver();
-    let mask_in = port_driver.lock(|drv| drv.get(mask, 0))?;
+    let mask_in = port_driver.lock(|drv| drv.get(index, mask, 0))?;
 
     let mut ret = [false; N];
     for (pin, state) in pins.iter().zip(ret.iter_mut()) {
@@ -113,109 +115,22 @@ where
     Ok(ret)
 }
 
-#[cfg(test)]
-mod tests {
-    use embedded_hal_mock::i2c as mock_i2c;
-
-    #[test]
-    fn pcf8574_write_multiple() {
-        let expectations = [
-            // single writes for multiple pins
-            mock_i2c::Transaction::write(0x21, vec![0b10111011]),
-            mock_i2c::Transaction::write(0x21, vec![0b10101111]),
-        ];
-        let mut bus = mock_i2c::Mock::new(&expectations);
-
-        let mut pcf = crate::Pcf8574::new(bus.clone(), true, false, false);
-        let mut pcf_pins = pcf.split();
-
-        super::write_multiple(
-            [&mut pcf_pins.p2, &mut pcf_pins.p4, &mut pcf_pins.p6],
-            [false, true, false],
-        )
-        .unwrap();
-
-        super::write_multiple([&mut pcf_pins.p2, &mut pcf_pins.p4], [true, false]).unwrap();
-
-        bus.done();
-    }
-
-    #[test]
-    fn pcf8575_write_multiple() {
-        let expectations = [
-            // single writes for multiple pins
-            mock_i2c::Transaction::write(0x21, vec![0b10111011, 0b11011101]),
-            mock_i2c::Transaction::write(0x21, vec![0b10101111, 0b11010111]),
-        ];
-        let mut bus = mock_i2c::Mock::new(&expectations);
-
-        let mut pcf = crate::Pcf8575::new(bus.clone(), true, false, false);
-        let mut pcf_pins = pcf.split();
-
-        super::write_multiple(
-            [
-                &mut pcf_pins.p02,
-                &mut pcf_pins.p04,
-                &mut pcf_pins.p06,
-                &mut pcf_pins.p11,
-                &mut pcf_pins.p13,
-                &mut pcf_pins.p15,
-            ],
-            [false, true, false, false, true, false],
-        )
-        .unwrap();
-
-        super::write_multiple(
-            [
-                &mut pcf_pins.p02,
-                &mut pcf_pins.p04,
-                &mut pcf_pins.p11,
-                &mut pcf_pins.p13,
-            ],
-            [true, false, true, false],
-        )
-        .unwrap();
-
-        bus.done();
-    }
-
-    #[test]
-    fn pca9536_read_multiple() {
-        let expectations = [
-            // single reads for multiple pins
-            mock_i2c::Transaction::write_read(0x41, vec![0x00], vec![0b00000101]),
-            mock_i2c::Transaction::write_read(0x41, vec![0x00], vec![0b00001010]),
-        ];
-        let mut bus = mock_i2c::Mock::new(&expectations);
-
-        let mut pca = crate::Pca9536::new(bus.clone());
-        let pca_pins = pca.split();
-
-        let res = super::read_multiple([&pca_pins.io0, &pca_pins.io1, &pca_pins.io2]).unwrap();
-        assert_eq!(res, [true, false, true]);
-
-        let res = super::read_multiple([&pca_pins.io1, &pca_pins.io0, &pca_pins.io3]).unwrap();
-        assert_eq!(res, [true, false, true]);
-
-        bus.done();
-    }
-
-    #[test]
-    #[should_panic]
-    fn pca9538_multiple_assert_same_chip() {
-        let expectations = [
-            // single reads for multiple pins
-            mock_i2c::Transaction::write_read(0x70, vec![0x00], vec![0b00000101]),
-        ];
-        let mut bus = mock_i2c::Mock::new(&expectations);
-
-        let mut pca0 = crate::Pca9538::new(bus.clone(), false, false);
-        let pca0_pins = pca0.split();
-        let mut pca1 = crate::Pca9538::new(bus.clone(), false, true);
-        let pca1_pins = pca1.split();
-
-        let _ = super::read_multiple([&pca0_pins.io0, &pca1_pins.io1]);
-
-        bus.done();
-    }
+#[allow(dead_code)]
+pub fn read_u16<PD, MUTEX>(ioe: &MUTEX, index: u8) -> Result<u16, PD::Error>
+where
+    PD: crate::PortDriver,
+    MUTEX: shared_bus::BusMutex<Bus = PD>,
+{
+    Ok(ioe.lock(|drv| drv.get(index, 0xFFFF, 0))? as u16)
 }
+
+#[allow(dead_code)]
+pub fn write_u16<PD, MUTEX>(ioe: &MUTEX, index: u8, data: u16) -> Result<(), PD::Error>
+where
+    PD: crate::PortDriver,
+    MUTEX: shared_bus::BusMutex<Bus = PD>,
+{
+    ioe.lock(|drv| drv.set(index, data as u32, !data as u32))
+}
+
+// EOF

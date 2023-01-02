@@ -63,19 +63,15 @@ mod pin;
 
 pub use bus::I2cBus;
 pub use common::mode;
-pub use multi::read_multiple;
-pub use multi::write_multiple;
+pub use multi::*;
 pub use pin::Pin;
 
 pub(crate) use bus::I2cExt;
-pub(crate) use common::Direction;
-pub(crate) use common::PortDriver;
-pub(crate) use common::PortDriverPolarity;
-pub(crate) use common::PortDriverTotemPole;
+pub use common::Direction;
+pub use common::PortDriver;
+pub use common::PortDriverPolarity;
+pub use common::PortDriverTotemPole;
 
-pub use dev::pca9536::Pca9536;
-pub use dev::pca9538::Pca9538;
 pub use dev::pca9555::Pca9555;
-pub use dev::pcf8574::Pcf8574;
-pub use dev::pcf8574::Pcf8574a;
-pub use dev::pcf8575::Pcf8575;
+
+// EOF
