@@ -7,13 +7,13 @@ repository = "https://github.com/rahix/port-expander"
 readme = "README.md"
 keywords = ["i2c", "shared-bus", "pca", "pcf", "gpio"]
 categories = ["embedded", "no-std", "hardware-support"]
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 resolver = "2"
 
 [dependencies]
 embedded-hal = { version = "0.2", features = ["unproven"] }
-shared-bus = "0.2"
+shared-bus = "0.3"
 
 [dev-dependencies]
 embedded-hal-mock = "0.8"
